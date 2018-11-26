@@ -50,6 +50,8 @@ var (
 	publish bool
 	// rate is number of seconds between analytics are collected and sent to a remote server
 	rate int
+	// delay is video playback delay
+	delay float64
 )
 
 func init() {
@@ -66,6 +68,7 @@ func init() {
 	flag.IntVar(&height, "height", 0, "Height of the restricted zone in pixels")
 	flag.BoolVar(&publish, "publish", false, "Publish data analytics to a remote server")
 	flag.IntVar(&rate, "rate", 1, "Number of seconds between analytics are sent to a remote server")
+	flag.Float64Var(&delay, "delay", 5.0, "Video playback delay")
 }
 
 // Perf stores inference engine performance info
@@ -250,14 +253,18 @@ func NewInferModel(model, config string, backend, target int) (*gocv.Net, error)
 }
 
 // NewCapture creates new video capture from input or camera backend if input is empty and returns it.
+// If input is not empty, NewCapture adjusts delay parameter so video playback matches FPS in the video file.
 // It fails with error if it either can't open the input video file or the video device
-func NewCapture(input string, deviceID int) (*gocv.VideoCapture, error) {
+func NewCapture(input string, deviceID int, delay *float64) (*gocv.VideoCapture, error) {
 	if input != "" {
 		// open video file
 		vc, err := gocv.VideoCaptureFile(input)
 		if err != nil {
 			return nil, err
 		}
+
+		fps := vc.Get(gocv.VideoCaptureFPS)
+		*delay = 1000 / fps
 
 		return vc, nil
 	}
@@ -330,7 +337,7 @@ func main() {
 	}
 
 	// create new video capture
-	vc, err := NewCapture(input, deviceID)
+	vc, err := NewCapture(input, deviceID, &delay)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating new video capture: %v\n", err)
 		os.Exit(1)
@@ -418,7 +425,6 @@ monitor:
 		default:
 			// do nothing; just display latest results
 		}
-		// TODO: figure out how to notify  goroutine about area change
 		// inference performance and print it
 		gocv.PutText(&img, fmt.Sprintf("%s", perf), image.Point{0, 15},
 			gocv.FontHersheySimplex, 0.5, color.RGBA{0, 0, 0, 0}, 2)
@@ -433,6 +439,7 @@ monitor:
 		// show the image in the window, and wait 1 millisecond
 		window.IMShow(img)
 
+		// TODO: figure out how to notify  goroutine about area change
 		// exit when ESC key is pressed
 		if window.WaitKey(1) == 27 {
 			break monitor
