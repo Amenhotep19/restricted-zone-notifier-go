@@ -135,11 +135,8 @@ func messageRunner(doneChan <-chan struct{}, pubChan <-chan *Result, c *MQTTClie
 	return nil
 }
 
-// detectMotion detects pedstrian motion in restricted zone area and returns alert if the motion has been detected
+// detectMotion detects pedstrian motion in restricted zone area and returns bool based on the result of detection
 func detectMotion(img *gocv.Mat, persons []image.Rectangle, area *image.Rectangle) bool {
-	// we assume there is no motion
-	alert := false
-
 	for i := range persons {
 		if !persons[i].In(image.Rect(0, 0, img.Cols(), img.Rows())) {
 			continue
@@ -150,7 +147,7 @@ func detectMotion(img *gocv.Mat, persons []image.Rectangle, area *image.Rectangl
 		}
 	}
 
-	return alert
+	return false
 }
 
 // detectPersons detects pedestrians in img and returns them as a slice of rectangles that encapsulates them
@@ -182,8 +179,8 @@ func detectPersons(net *gocv.Net, img *gocv.Mat) []image.Rectangle {
 
 // frameRunner reads image frames from framesChan and performs face and sentiment detections on them
 // doneChan is used to receive a signal from the main goroutine to notify frameRunner to stop and return
-func frameRunner(framesChan <-chan *gocv.Mat, doneChan <-chan struct{}, resultsChan chan<- *Result,
-	perfChan chan<- *Perf, pubChan chan<- *Result, net *gocv.Net, area *image.Rectangle) error {
+func frameRunner(framesChan <-chan *frame, doneChan <-chan struct{}, resultsChan chan<- *Result,
+	perfChan chan<- *Perf, pubChan chan<- *Result, net *gocv.Net) error {
 
 	for {
 		select {
@@ -193,11 +190,11 @@ func frameRunner(framesChan <-chan *gocv.Mat, doneChan <-chan struct{}, resultsC
 		case frame := <-framesChan:
 			// let's make a copy of the original
 			img := gocv.NewMat()
-			frame.CopyTo(&img)
+			frame.img.CopyTo(&img)
 
 			persons := detectPersons(net, &img)
 
-			alert := detectMotion(&img, persons, area)
+			alert := detectMotion(&img, persons, frame.area)
 
 			// detection result
 			result := &Result{
@@ -297,10 +294,10 @@ func NewMQTTPublisher() (*MQTTClient, error) {
 	return c, nil
 }
 
-// RestrictedZone create a rectangle which encompasses restricted zone are in the image feed and returns it.
-// If negative point coordinates are given, the area will default to the beginning of the frame.
-// If either default areansize values are given (0,0) or negative ones we returned are defaults to the whole frame
-func RestrictedZone(pointX, pointY, width, height, rows, cols int) image.Rectangle {
+// SetRestrictedZone create a rectangle which encompasses restricted zone are in the image feed and returns it.
+// If negative point coordinates are given, the area will default to the beginning of frame.
+// If either default area size values are given (0,0) or negative ones we returned are defaults to the whole frame
+func SetRestrictedZone(pointX, pointY, width, height int, img *gocv.Mat, area *image.Rectangle) {
 	x, y := 0, 0
 	w, h := width, height
 
@@ -312,14 +309,23 @@ func RestrictedZone(pointX, pointY, width, height, rows, cols int) image.Rectang
 
 	// if either default values are given or negative we will default to the whole frame
 	if width <= 0 {
-		w = cols
+		w = img.Cols()
 	}
 
 	if h <= 0 {
-		h = rows
+		h = img.Rows()
 	}
 
-	return image.Rect(x, y, x+w, y+h)
+	area.Min.X, area.Min.Y = x, y
+	area.Max.X, area.Max.Y = x+w, y+h
+}
+
+// frame ise used to send video frames and program configuration to upstream goroutines
+type frame struct {
+	// img is image frame
+	img *gocv.Mat
+	// area is restricted zone area rectangle
+	area *image.Rectangle
 }
 
 func main() {
@@ -345,7 +351,7 @@ func main() {
 	defer vc.Close()
 
 	// frames channel provides the source of images to process
-	framesChan := make(chan *gocv.Mat, 1)
+	framesChan := make(chan *frame, 1)
 	// errChan is a channel used to capture program errors
 	errChan := make(chan error, 2)
 	// doneChan is used to signal goroutines they need to stop
@@ -378,19 +384,16 @@ func main() {
 		defer pub.Disconnect(100)
 	}
 
-	// TODO: figure out how to notify  goroutine about area change
-	// rectangle marking restricted area zone
-	area := RestrictedZone(pointX, pointY, width, height, 0, 0)
 	// start frameRunner goroutine
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		errChan <- frameRunner(framesChan, doneChan, resultsChan, perfChan, pubChan, net, &area)
+		errChan <- frameRunner(framesChan, doneChan, resultsChan, perfChan, pubChan, net)
 	}()
 
 	// open display window
 	window := gocv.NewWindow(name)
-	window.SetWindowProperty(gocv.WindowPropertyFullscreen, gocv.WindowAutosize)
+	window.SetWindowProperty(gocv.WindowPropertyAutosize, gocv.WindowAutosize)
 	defer window.Close()
 
 	// prepare input image matrix
@@ -400,6 +403,8 @@ func main() {
 	// initialize the result pointers
 	result := new(Result)
 	perf := new(Perf)
+	// restricted zone area
+	var area image.Rectangle
 
 monitor:
 	for {
@@ -411,7 +416,32 @@ monitor:
 			continue
 		}
 
-		framesChan <- &img
+		// get default restricted zone area
+		SetRestrictedZone(pointX, pointY, width, height, &img, &area)
+		fmt.Printf("Restricted zone: %v\n", area)
+		// refine the are or quit the program
+		switch key := window.WaitKey(int(delay)); key {
+		// Select ROI
+		case 99:
+			// select ROI encompassing restricted zone
+			roi := gocv.SelectROI(name, img)
+			// update global configuration settings
+			pointX, pointY = roi.Min.X, roi.Min.Y
+			width, height = roi.Size().X, roi.Size().Y
+			// update restricted zone area
+			SetRestrictedZone(pointX, pointY, width, height, &img, &area)
+			fmt.Printf("Restricted Zone: -x=%d -y=%d -height=%d -width=%d\n",
+				area.Min.X, area.Min.Y, area.Size().X, area.Size().Y)
+		// ESC button pressed
+		case 27:
+			fmt.Printf("Attempting to shut down: ESC pressed\n")
+			break monitor
+		}
+
+		// draw restricted zone rectangle
+		gocv.Rectangle(&img, area, color.RGBA{255, 0, 0, 0}, 1)
+		// send data down the channel
+		framesChan <- &frame{img: &img, area: &area}
 
 		select {
 		case sig := <-sigChan:
@@ -433,17 +463,11 @@ monitor:
 			gocv.FontHersheySimplex, 0.5, color.RGBA{0, 0, 0, 0}, 2)
 		// display alert message when humane enters restricted zone
 		if result.Alert {
-			gocv.PutText(&img, alert, image.Point{0, 80},
+			gocv.PutText(&img, alert, image.Point{0, 120},
 				gocv.FontHersheySimplex, 0.5, color.RGBA{255, 0, 0, 0}, 2)
 		}
 		// show the image in the window, and wait 1 millisecond
 		window.IMShow(img)
-
-		// TODO: figure out how to notify  goroutine about area change
-		// exit when ESC key is pressed
-		if window.WaitKey(1) == 27 {
-			break monitor
-		}
 	}
 	// signal all goroutines to finish
 	close(doneChan)
