@@ -86,6 +86,8 @@ func (p *Perf) String() string {
 type Result struct {
 	// Alert is used to raise an alert based on the presence of pedestrians in restricted area
 	Alert bool
+	// Perf is inference engine performance
+	Perf *Perf
 }
 
 // String implements fmt.Stringer interface for Result
@@ -180,8 +182,10 @@ func detectPersons(net *gocv.Net, img *gocv.Mat) []image.Rectangle {
 // frameRunner reads image frames from framesChan and performs face and sentiment detections on them
 // doneChan is used to receive a signal from the main goroutine to notify frameRunner to stop and return
 func frameRunner(framesChan <-chan *frame, doneChan <-chan struct{}, resultsChan chan<- *Result,
-	perfChan chan<- *Perf, pubChan chan<- *Result, net *gocv.Net) error {
+	pubChan chan<- *Result, net *gocv.Net) error {
 
+	// perf is inference engine performance
+	perf := new(Perf)
 	for {
 		select {
 		case <-doneChan:
@@ -196,13 +200,14 @@ func frameRunner(framesChan <-chan *frame, doneChan <-chan struct{}, resultsChan
 
 			alert := detectMotion(&img, persons, frame.area)
 
+			perf = getPerformanceInfo(net)
 			// detection result
 			result := &Result{
 				Alert: alert,
+				Perf:  perf,
 			}
 
 			// send data down the channels
-			perfChan <- getPerformanceInfo(net)
 			resultsChan <- result
 			if pubChan != nil {
 				pubChan <- result
@@ -358,8 +363,6 @@ func main() {
 	doneChan := make(chan struct{})
 	// resultsChan is used for detection distribution
 	resultsChan := make(chan *Result, 1)
-	// perfChan is used for collecting performance stats
-	perfChan := make(chan *Perf, 1)
 	// sigChan is used as a handler to stop all the goroutines
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, os.Kill, syscall.SIGTERM)
@@ -388,7 +391,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		errChan <- frameRunner(framesChan, doneChan, resultsChan, perfChan, pubChan, net)
+		errChan <- frameRunner(framesChan, doneChan, resultsChan, pubChan, net)
 	}()
 
 	// open display window
@@ -402,7 +405,6 @@ func main() {
 
 	// initialize the result pointers
 	result := new(Result)
-	perf := new(Perf)
 	// restricted zone area
 	var area image.Rectangle
 
@@ -418,7 +420,6 @@ monitor:
 
 		// get default restricted zone area
 		SetRestrictedZone(pointX, pointY, width, height, &img, &area)
-		fmt.Printf("Restricted zone: %v\n", area)
 		// refine the are or quit the program
 		switch key := window.WaitKey(int(delay)); key {
 		// Select ROI
@@ -451,12 +452,11 @@ monitor:
 			fmt.Printf("Shutting down. Encountered error: %s\n", err)
 			break monitor
 		case result = <-resultsChan:
-			perf = <-perfChan
 		default:
 			// do nothing; just display latest results
 		}
 		// inference performance and print it
-		gocv.PutText(&img, fmt.Sprintf("%s", perf), image.Point{0, 15},
+		gocv.PutText(&img, fmt.Sprintf("%s", result.Perf), image.Point{0, 15},
 			gocv.FontHersheySimplex, 0.5, color.RGBA{0, 0, 0, 0}, 2)
 		// inference results label
 		gocv.PutText(&img, fmt.Sprintf("%s", result), image.Point{0, 40},
@@ -471,6 +471,12 @@ monitor:
 	}
 	// signal all goroutines to finish
 	close(doneChan)
+	// unblock resultsChan if necessary
+	select {
+	case <-resultsChan:
+	default:
+		// resultsChan was empty, proceed
+	}
 	// wait for all goroutines to finish
 	wg.Wait()
 }
