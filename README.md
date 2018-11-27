@@ -120,6 +120,24 @@ For example:
 
 If you do not select or specify an area, the default is to use the entire window as the off limits area.
 
+### Docker
+
+You can also build a Docker image and then run the program in a Docker container. First you need to build the image. You can use the `Dockerfile` present in the cloned repository and build the Docker image by running the following command:
+
+```
+docker build -t restricted-zone-notifier-go .
+```
+
+This will produce an image called `restricted-zone-notifier-go` which contains the built binary. Since this docker image has an [ENTRYPOINT](https://docs.docker.com/engine/reference/builder/#entrypoint) defined you can run the image as an executable using the following command:
+
+```
+docker run -it --rm restricted-zone-notifier-go -h
+```
+
+### Azure
+
+If you'd like to know how you can take advantage of more advanced build system provided by [Microsoft Azure Cloud](https://azure.microsoft.com/) , please check out the Azure guide [here](./azure.md). Following the steps in the guide you can build Docker container and push it into Azure Container Registry to make it available online.
+
 ### Hardware Acceleration
 
 This application can take advantage of the hardware acceleration in the OpenVINO toolkit by using the `-backend, -b` and `-target, -t` parameters.
@@ -131,12 +149,12 @@ For example, to use the OpenVINO™ toolkit backend with the GPU in 32-bit mode:
 
 To run the code using 16-bit floats, you have to both set the `-target` flag to use the GPU in 16-bit mode, as well as use the FP16 version of the Intel® models:
 ```
-    ./monitor -model=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP32/pedestrian-detection-adas-0002.bin -model-config=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP32/pedestrian-detection-adas-0002.xml -backend=2 -target=2
+    ./monitor -model=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP16/pedestrian-detection-adas-0002.bin -model-config=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP16/pedestrian-detection-adas-0002.xml -backend=2 -target=2
 ```
 
 To run the code using the VPU, you have to set the `-target` flag to `3` and also use the 16-bit FP16 version of the Intel® models:
 ```
-    ./monitor -model=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP32/pedestrian-detection-adas-0002.bin -model-config=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP32/pedestrian-detection-adas-0002.xml -backend=2 -target=3
+    ./monitor -model=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP16/pedestrian-detection-adas-0002.bin -model-config=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP16/pedestrian-detection-adas-0002.xml -backend=2 -target=3
 ```
 
 ## Sample Videos
