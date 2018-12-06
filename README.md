@@ -170,7 +170,7 @@ There are several videos available to use as sample videos to show the capabilit
 To then execute the code using one of these sample videos, run the following commands from the `restricted-zone-notifier-cpp` directory:
 ```
     cd build
-    ./monitor -model=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP32/pedestrian-detection-adas-0002.bin -model-config=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP32/pedestrian-detection-adas-0002.xml -input=../resources/worker-zone-detection.mp4
+    ./monitor -model=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP32/pedestrian-detection-adas-0002.bin -model-config=/opt/intel/computer_vision_sdk/deployment_tools/intel_models/pedestrian-detection-adas-0002/FP32/pedestrian-detection-adas-0002.xml -input=../resources/worker-zone-detection.mp4 -model-confidence=0.7
 ```
 
 ### Machine to Machine Messaging with MQTT

@@ -184,14 +184,28 @@ func detectPersons(net *gocv.Net, img *gocv.Mat) []image.Rectangle {
 func frameRunner(framesChan <-chan *frame, doneChan <-chan struct{}, resultsChan chan<- *Result,
 	pubChan chan<- *Result, net *gocv.Net) error {
 
+	// frame is image frame
+	// we want to avoid continuous allocation that lead to GC pauses
+	frame := new(frame)
+	// result stores detection results
+	result := new(Result)
 	// perf is inference engine performance
 	perf := new(Perf)
 	for {
 		select {
 		case <-doneChan:
 			fmt.Printf("Stopping frameRunner: received stop sginal\n")
+			// close results channel
+			close(resultsChan)
+			// close publish channel
+			if pubChan != nil {
+				close(pubChan)
+			}
 			return nil
-		case frame := <-framesChan:
+		case frame = <-framesChan:
+			if frame == nil {
+				continue
+			}
 			// let's make a copy of the original
 			img := gocv.NewMat()
 			frame.img.CopyTo(&img)
@@ -202,7 +216,7 @@ func frameRunner(framesChan <-chan *frame, doneChan <-chan struct{}, resultsChan
 
 			perf = getPerformanceInfo(net)
 			// detection result
-			result := &Result{
+			result = &Result{
 				Alert: alert,
 				Perf:  perf,
 			}
@@ -470,12 +484,11 @@ monitor:
 		window.IMShow(img)
 	}
 	// signal all goroutines to finish
+	close(framesChan)
 	close(doneChan)
 	// unblock resultsChan if necessary
-	select {
-	case <-resultsChan:
-	default:
-		// resultsChan was empty, proceed
+	for range resultsChan {
+		// collect any outstanding results
 	}
 	// wait for all goroutines to finish
 	wg.Wait()
