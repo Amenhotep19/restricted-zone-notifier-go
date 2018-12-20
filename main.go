@@ -1,3 +1,26 @@
+/*
+* Copyright (c) 2018 Intel Corporation.
+*
+* Permission is hereby granted, free of charge, to any person obtaining
+* a copy of this software and associated documentation files (the
+* "Software"), to deal in the Software without restriction, including
+* without limitation the rights to use, copy, modify, merge, publish,
+* distribute, sublicense, and/or sell copies of the Software, and to
+* permit persons to whom the Software is furnished to do so, subject to
+* the following conditions:
+*
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+* LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+* OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+* WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 package main
 
 import (
@@ -82,9 +105,9 @@ func (p *Perf) String() string {
 	return fmt.Sprintf("Inference time: %.2f ms", p.Net)
 }
 
-// Result is computation result of the monitor returned to main goroutine
+// Result is computation result of the notifier returned to main goroutine
 type Result struct {
-	// Alert is used to raise an alert based on the presence of pedestrians in restricted area
+	// Alert is used to raise an alert based on the presence of humans in restricted area
 	Alert bool
 	// Perf is inference engine performance
 	Perf *Perf
@@ -129,15 +152,13 @@ func messageRunner(doneChan <-chan struct{}, pubChan <-chan *Result, c *MQTTClie
 		case <-pubChan:
 			// we discard messages in between ticker times
 		case <-doneChan:
-			fmt.Printf("Stopping messageRunner: received stop sginal\n")
+			fmt.Printf("Stopping messageRunner: received stop signal\n")
 			return nil
 		}
 	}
-
-	return nil
 }
 
-// detectMotion detects pedstrian motion in restricted zone area and returns bool based on the result of detection
+// detectMotion detects humans in restricted zone area and returns bool based on the result of detection
 func detectMotion(img *gocv.Mat, persons []image.Rectangle, area *image.Rectangle) bool {
 	for i := range persons {
 		if !persons[i].In(image.Rect(0, 0, img.Cols(), img.Rows())) {
@@ -152,7 +173,7 @@ func detectMotion(img *gocv.Mat, persons []image.Rectangle, area *image.Rectangl
 	return false
 }
 
-// detectPersons detects pedestrians in img and returns them as a slice of rectangles that encapsulates them
+// detectPersons detects humans in img and returns them as a slice of rectangles that encapsulates them
 func detectPersons(net *gocv.Net, img *gocv.Mat) []image.Rectangle {
 	// convert img Mat to 672x384 blob that the face detector can analyze
 	blob := gocv.BlobFromImage(*img, 1.0, image.Pt(672, 384), gocv.NewScalar(0, 0, 0, 0), false, false)
@@ -179,7 +200,7 @@ func detectPersons(net *gocv.Net, img *gocv.Mat) []image.Rectangle {
 	return persons
 }
 
-// frameRunner reads image frames from framesChan and performs face and sentiment detections on them
+// frameRunner reads image frames from framesChan and performs human detection on them
 // doneChan is used to receive a signal from the main goroutine to notify frameRunner to stop and return
 func frameRunner(framesChan <-chan *frame, doneChan <-chan struct{}, resultsChan chan<- *Result,
 	pubChan chan<- *Result, net *gocv.Net) error {
@@ -194,10 +215,8 @@ func frameRunner(framesChan <-chan *frame, doneChan <-chan struct{}, resultsChan
 	for {
 		select {
 		case <-doneChan:
-			fmt.Printf("Stopping frameRunner: received stop sginal\n")
-			// close results channel
+			fmt.Printf("Stopping frameRunner: received stop signal\n")
 			close(resultsChan)
-			// close publish channel
 			if pubChan != nil {
 				close(pubChan)
 			}
@@ -231,8 +250,6 @@ func frameRunner(framesChan <-chan *frame, doneChan <-chan struct{}, resultsChan
 			img.Close()
 		}
 	}
-
-	return nil
 }
 
 func parseCliFlags() error {
@@ -486,6 +503,7 @@ monitor:
 	// signal all goroutines to finish
 	close(framesChan)
 	close(doneChan)
+
 	// unblock resultsChan if necessary
 	for range resultsChan {
 		// collect any outstanding results
