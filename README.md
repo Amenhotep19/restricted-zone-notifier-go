@@ -159,10 +159,10 @@ You can select an area to be used as the "off-limits" area by pressing the `c` k
 Once you have selected the "off-limits" area the coordinates will be displayed in the terminal window like this:
 
 ```shell
-Assembly Area Selection: -x=429 -y=101 -height=619 -width=690
+Restricted Zone: -x=429 -y=101 -height=619 -width=690
 ```
 
-You can run the application using those coordinates by using the `-x`, `-y`, `-height, -h`, and `-width, -w` flags to pre-select that area.
+You can run the application using those coordinates by using the `-x`, `-y`, `-height`, and `-width` flags to pre-select that area.
 
 For example:
 
